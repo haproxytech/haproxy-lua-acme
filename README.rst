@@ -33,9 +33,9 @@ Requirements
 
 * A modern HAProxy version (v1.8) with Lua support (check with
   ``haproxy -vv | grep USE_LUA=1``)
-* `haproxy-lua-http` - Lua HTTP server/client for HAProxy Lua host
-* `json.lua` - Lua JSON library (https://github.com/rxi/json.lua)
-* `lua-ossl` - OpenSSL bindings for Lua (https://github.com/wahern/luaossl)
+* `haproxy-lua-http`_ - Lua HTTP server/client for HAProxy Lua host
+* `json.lua`_ - Lua JSON library
+* `luaossl`_ - OpenSSL bindings for Lua
 
 
 Configuration
@@ -134,3 +134,7 @@ For example by using curl to POST data in *multipart/form-data* format:
 Aliases are optional, and we use curl ``@`` syntax to post files.
 The output is full certificate chain (with key appended), suitable for direct
 consumption by HAProxy.
+
+.. _`haproxy-lua-http`: https://github.com/haproxytech/haproxy-lua-http
+.. _`json.lua`: https://github.com/rxi/json.lua
+.. _`luaossl`: https://github.com/wahern/luaossl
