@@ -311,35 +311,34 @@ local function new_order(applet)
     end
 
     -- Place new order
-    resp, err = acme:post{url=acme.resources["newOrder"], data=order_payload,
+    local order, err = acme:post{url=acme.resources["newOrder"], data=order_payload,
                           resource="newOrder"}
-    if not resp then
+    if not order then
         return http.response.create{status_code=500, data=err}:send(applet)
-    else if resp.status_code ~= 201 then
-        return resp:send(applet)
+    elseif order.status_code ~= 201 then
+        return order:send(applet)
     end
 
-    local resp_json = resp:json()
-    local finalize = resp_json.finalize
-    local authorizations = resp_json.authorizations
+    local order_json = order:json()
 
-    for _, auth in ipairs(authorizations) do
+    for _, auth in ipairs(order_json.authorizations) do
         --
         local auth_payload = {
             keyAuthorization = nil
         }
 
         -- Get auth token
-        local resp, err = http.get{url=acme:proxy_url(auth)}
+        local auth, err = http.get{url=acme:proxy_url(auth)}
 
-        if resp then
-            local auth_resp = resp:json()
+        if auth then
+            local auth_json = auth:json()
 
-            for _, ch in ipairs(auth_resp.challenges) do
+            for _, ch in ipairs(auth_json.challenges) do
                 if ch.type == "http-01" then
                     http_challenges[ch.token] = string.format("%s.%s",
                         ch.token, acme.account.thumbprint)
-                    resp, err = acme:post{url=ch.url, data=ch, resource="challengeDone", timeout=1}
+                    resp, err = acme:post{url=ch.url, data=ch,
+                                          resource="challengeDone", timeout=1}
                 end
             end
         end
@@ -370,7 +369,8 @@ local function new_order(applet)
         csr = http.base64.encode(csr:tostring("DER"), base64enc)
     }
 
-    resp, err = acme:post{url=finalize, data=payload, resource="finalizeOrder"}
+    resp, err = acme:post{url=order_json.finalize, data=payload,
+                          resource="finalizeOrder"}
 
     if resp and resp.status_code == 200 then
         local resp_json = resp:json()
