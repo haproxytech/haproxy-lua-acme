@@ -320,6 +320,7 @@ local function new_order(applet)
     end
 
     local order_json = order:json()
+    local challenge_token
 
     for _, auth in ipairs(order_json.authorizations) do
         --
@@ -339,6 +340,8 @@ local function new_order(applet)
                         ch.token, acme.account.thumbprint)
                     resp, err = acme:post{url=ch.url, data=ch,
                                           resource="challengeDone", timeout=1}
+                    challenge_token = ch.token
+                    break
                 end
             end
         end
@@ -346,6 +349,9 @@ local function new_order(applet)
 
     -- TODO: Check pending status in a loop
     core.sleep(5)
+    if challenge_token and http_challenges[challenge_token] then
+        http_challenges[challenge_token] = nil
+    end
 
     -- CSR creation
     local dn = openssl.name.new()
@@ -390,10 +396,9 @@ end
 local function acme_challenge(applet)
     local p = core.tokenize(applet.path, "/", true)
     if not p[3] or not http_challenges[p[3]] then
-        http.response.create{status_code=404}:send(applet)
+        return http.response.create{status_code=404}:send(applet)
     end
     http.response.create{status_code=200, content=http_challenges[p[3]]}:send(applet)
-    http_challenges[p[3]] = nil
 end
 
 --- Request handler/router
