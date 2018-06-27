@@ -347,8 +347,30 @@ local function new_order(applet)
         end
     end
 
-    -- TODO: Check pending status in a loop
-    core.sleep(5)
+    -- Wait until the order is ready
+    local order_status
+    for _, t in pairs({1, 1, 2, 3, 5, 8, 13}) do
+        core.sleep(t)
+        local resp, err = http.get{url=acme:proxy_url(order.headers["location"])}
+        if resp then
+            order_status = resp:json()
+            if order_status.status == "ready" then
+                break
+            elseif order_status.status == "invalid" then
+                return resp:send(applet)
+            end
+        end
+    end
+
+    if not order_status then
+        return http.response.create{status_code=500,
+                                    content="Could not get order status"}:send(applet)
+    end
+
+    if order_status.status ~= "ready" then
+        return http.response.create{status_code=500, content=order_status}:send(applet)
+    end
+
     if challenge_token and http_challenges[challenge_token] then
         http_challenges[challenge_token] = nil
     end
