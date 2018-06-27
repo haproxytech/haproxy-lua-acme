@@ -317,73 +317,73 @@ local function new_order(applet)
         return http.response.create{status_code=500, data=err}:send(applet)
     end
 
-        -- if resp.code == 201
-        local resp_json = resp:json()
-        local finalize = resp_json.finalize
-        local authorizations = resp_json.authorizations
+    -- if resp.code == 201
+    local resp_json = resp:json()
+    local finalize = resp_json.finalize
+    local authorizations = resp_json.authorizations
 
-        for _, auth in ipairs(authorizations) do
-            --
-            local auth_payload = {
-                keyAuthorization = nil
-            }
+    for _, auth in ipairs(authorizations) do
+        --
+        local auth_payload = {
+            keyAuthorization = nil
+        }
 
-            -- Get auth token
-            local resp, err = http.get{url=acme:proxy_url(auth)}
+        -- Get auth token
+        local resp, err = http.get{url=acme:proxy_url(auth)}
 
-            if resp then
-                local auth_resp = resp:json()
+        if resp then
+            local auth_resp = resp:json()
 
-                for _, ch in ipairs(auth_resp.challenges) do
-                    if ch.type == "http-01" then
-                        http_challenges[ch.token] = string.format("%s.%s",
-                            ch.token, acme.account.thumbprint)
-                        resp, err = acme:post{url=ch.url, data=ch, resource="challengeDone", timeout=1}
-                    end
+            for _, ch in ipairs(auth_resp.challenges) do
+                if ch.type == "http-01" then
+                    http_challenges[ch.token] = string.format("%s.%s",
+                        ch.token, acme.account.thumbprint)
+                    resp, err = acme:post{url=ch.url, data=ch, resource="challengeDone", timeout=1}
                 end
             end
         end
+    end
 
-        -- TODO: Check pending status in a loop
-        core.sleep(5)
+    -- TODO: Check pending status in a loop
+    core.sleep(5)
 
-        -- CSR creation
-        local dn = openssl.name.new()
-        dn:add("CN", form.domain)
+    -- CSR creation
+    local dn = openssl.name.new()
+    dn:add("CN", form.domain)
 
-        local alt = openssl.altname.new()
-        alt:add("DNS", form.domain)
+    local alt = openssl.altname.new()
+    alt:add("DNS", form.domain)
 
-        for _, alias in pairs(aliases) do
-            alt:add("DNS", alias)
+    for _, alias in pairs(aliases) do
+        alt:add("DNS", alias)
+    end
+
+    local csr = openssl.csr.new()
+    csr:setSubject(dn)
+    csr:setSubjectAlt(alt)
+
+    local key = openssl.pkey.new(form.domain_key.data or form.domain_key)
+    csr:setPublicKey(key)
+    csr:sign(key)
+    local payload = {
+        csr = http.base64.encode(csr:tostring("DER"), base64enc)
+    }
+
+    resp, err = acme:post{url=finalize, data=payload, resource="finalizeOrder"}
+
+    if resp and resp.status_code == 200 then
+        local resp_json = resp:json()
+
+        if not resp_json.certificate then
+            return http.response.create{status_code=500, content="No cert"}:send(applet)
         end
 
-        local csr = openssl.csr.new()
-        csr:setSubject(dn)
-        csr:setSubjectAlt(alt)
-
-        local key = openssl.pkey.new(form.domain_key.data or form.domain_key)
-        csr:setPublicKey(key)
-        csr:sign(key)
-        local payload = {
-            csr = http.base64.encode(csr:tostring("DER"), base64enc)
-        }
-
-        resp, err = acme:post{url=finalize, data=payload, resource="finalizeOrder"}
-
-        if resp and resp.status_code == 200 then
-            local resp_json = resp:json()
-
-            if not resp_json.certificate then
-                return http.response.create{status_code=500, content="No cert"}:send(applet)
-            end
-
-            local resp, err = http.get{url=acme:proxy_url(resp_json.certificate)}
-            local bundle = string.format("%s%s", resp.content, key:toPEM("private"))
-            return http.response.create{status_code=200, content=bundle}:send(applet)
-        else
-            return resp:send(applet)
-        end
+        local resp, err = http.get{url=acme:proxy_url(resp_json.certificate)}
+        local bundle = string.format("%s%s", resp.content, key:toPEM("private"))
+        return http.response.create{status_code=200, content=bundle}:send(applet)
+    else
+        return resp:send(applet)
+    end
 end
 
 local function acme_challenge(applet)
