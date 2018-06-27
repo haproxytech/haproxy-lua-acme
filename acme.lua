@@ -315,9 +315,10 @@ local function new_order(applet)
                           resource="newOrder"}
     if not resp then
         return http.response.create{status_code=500, data=err}:send(applet)
+    else if resp.status_code ~= 201 then
+        return resp:send(applet)
     end
 
-    -- if resp.code == 201
     local resp_json = resp:json()
     local finalize = resp_json.finalize
     local authorizations = resp_json.authorizations
