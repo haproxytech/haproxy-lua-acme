@@ -405,6 +405,11 @@ local function new_order(applet)
     if resp and resp.status_code == 200 then
         local resp_json = resp:json()
 
+        if not resp.headers["content-type"] == "application/pem-certificate-chain" then
+            return http.response.create{status_code=500,
+                                        content="Wrong content type"}:send(applet)
+        end
+
         if not resp_json.certificate then
             return http.response.create{status_code=500, content="No cert"}:send(applet)
         end
