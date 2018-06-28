@@ -290,6 +290,8 @@ local function new_order(applet)
 
     if not resp then
         return http.response.create{status_code=500, data=err}:send(applet)
+    elseif resp.status_code ~= 200 and resp.status_code ~= 201 then
+        return resp:send(applet)
     end
 
     local aliases = {}
