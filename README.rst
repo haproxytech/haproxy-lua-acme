@@ -72,6 +72,7 @@ haproxy as follows:
   listen acme-ca
     bind 127.0.0.1:9012
     server ca acme-v02.api.letsencrypt.org:443 ssl verify required ca-file letsencrypt-x3-ca-chain.pem
+    http-request set-header Host acme-v02.api.letsencrypt.org
 
 Configuration is kept in a separate Lua file, where you must explicitly set
 ``termsOfServiceAgreed`` option to ``true`` in order to be able to acquire
