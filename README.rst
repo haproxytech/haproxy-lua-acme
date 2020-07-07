@@ -1,6 +1,12 @@
 HAProxy ACME v2 client
 ======================
 
+Important notice
+----------------
+Beware, the current code in the repo is not compatible with the upstream Let's
+Encrypt ACME servers. We hope to be able to fix it as soon as possible, sorry
+for inconvenience.
+
 This is a client implementation for ACME (Automatic Certificate Management
 Environment) protocol, currently draft IETF standard
 (https://tools.ietf.org/html/draft-ietf-acme-acme-12)
