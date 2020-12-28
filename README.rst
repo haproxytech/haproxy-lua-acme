@@ -80,6 +80,8 @@ haproxy as follows:
     server ca acme-v02.api.letsencrypt.org:443 ssl verify required ca-file letsencrypt-x3-ca-chain.pem
     http-request set-header Host acme-v02.api.letsencrypt.org
 
+``letsencrypt-x3-ca-chain.pem`` is the concatenation of the active root certificate and intermediate certificate in one pem file, available here : https://letsencrypt.org/certificates/
+
 Configuration is kept in a separate Lua file, where you must explicitly set
 ``termsOfServiceAgreed`` option to ``true`` in order to be able to acquire
 certs. Before doing that, please read latest Let's Encrypt terms of service and
