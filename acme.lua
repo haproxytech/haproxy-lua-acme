@@ -73,15 +73,12 @@ function ACME.create(conf)
     local resp
     local err
 
-    for _, d in ipairs({"/directory", "/dir", "/"}) do
-        resp, err = http.get{url=config.ca.proxy_uri .. d}
+    resp, err = self:get{url=config.ca.proxy_uri .. "/directory"}
 
-        if resp and resp.status_code == 200 and resp.headers["content-type"]
-                and resp.headers["content-type"]:match("application/json") then
-            self.resources = json.decode(resp.content)
-            self.nonce = resp.headers["replay-nonce"]
-            break
-        end
+    if resp and resp.status_code == 200 and resp.headers["content-type"]
+            and resp.headers["content-type"]:match("application/json") then
+        self.resources = json.decode(resp.content)
+        self.nonce = resp.headers["replay-nonce"]
     end
 
     if not self.resources then
@@ -103,12 +100,29 @@ end
 
 --- Adapt resource URLs when going through HAProxy
 function ACME.proxy_url(self, url)
-
     if url:sub(1, #self.conf.ca.uri) == self.conf.ca.uri then
         return string.format("%s%s", self.conf.ca.proxy_uri, url:sub(#self.conf.ca.uri))
     else
         return url
     end
+end
+
+--- ACME wrapper for http.get()
+--
+-- @param resource  ACME resource type
+-- @param url       Valid HTTP url (mandatory)G
+--
+-- @return Response object or tuple (nil, msg) on errors
+function ACME.get(self, t)
+    local resp, err = http.get{url=self:proxy_url(t.url)}
+
+    if (not t.retry or t.retry < 5) and (not resp or (resp and resp.status_code == 503)) then
+        t.retry = not t.retry and 1 or t.retry + 1
+
+        return self:get(t)
+    end
+
+    return resp, err
 end
 
 --- ACME wrapper for http.post()
@@ -136,6 +150,7 @@ function ACME.post(self, t)
 
     local resp, err = http.post{url=self:proxy_url(t.url), data=jws,
                                 headers=t.headers, timeout=t.timeout}
+
     if resp and resp.headers then
         self.nonce = resp.headers["replay-nonce"]
 
@@ -151,10 +166,72 @@ function ACME.post(self, t)
                     return nil, err
                 end
 
-                resp, err = http.post{url=self:proxy_url(t.url), data=jws,
+                resp, err = self:post{url=self:proxy_url(t.url), data=jws,
                                       headers=t.headers}
             end
         end
+    end
+
+    if (not t.retry or t.retry < 5) and (not resp or (resp and resp.status_code == 503)) then
+        t.retry = not t.retry and 1 or t.retry + 1
+
+        return self:post(t)
+    end
+
+    return resp, err
+end
+
+--- ACME wrapper for POST-as-GET
+--
+-- @param resource  ACME resource type
+-- @param url       Valid HTTP url (mandatory)G
+-- @param headers   Lua table with request headers
+-- @param data      Request content
+--
+-- @return Response object or tuple (nil, msg) on errors
+function ACME.postAsGet(self, t)
+    local jws, err = self:jws{url=t.url, payload=nil}
+
+    if not jws then
+        return nil, err
+    end
+
+    if not t.headers then
+        t.headers = {
+            ["content-type"] = "application/jose+json"
+        }
+    elseif not t.headers["content-type"] then
+        t.headers["content-type"] = "application/jose+json"
+    end
+
+    local resp, err = http.post{url=self:proxy_url(t.url), data=jws,
+                                headers=t.headers, timeout=t.timeout}
+
+    if resp and resp.headers then
+        self.nonce = resp.headers["replay-nonce"]
+
+        if resp.status_code == 400 then
+            local info = resp:json()
+
+            if info and info.type == "urn:ietf:params:acme:error:badNonce" then
+
+                -- We need to retry once more with new nonce (hence new jws)
+                jws, err = self:jws{resource=t.resource, url=t.url,
+                                    payload=""}
+                if not jws then
+                    return nil, err
+                end
+
+                resp, err = self:post{url=self:proxy_url(t.url), data=jws,
+                                      headers=t.headers}
+            end
+        end
+    end
+
+    if (not t.retry or t.retry < 5) and (not resp or (resp and resp.status_code == 503)) then
+        t.retry = not t.retry and 1 or t.retry + 1
+
+        return self:postAsGet(t)
     end
 
     return resp, err
@@ -171,14 +248,13 @@ function ACME.refresh_nonce(self)
     self.nonce = nil
     if nonce then return nonce end
 
+    local resp, e = http.head{url=self:proxy_url(self.resources["newNonce"])}
 
-    local r, e = http.head{url=self:proxy_url(self.resources["newNonce"])}
-
-    if r and r.headers then
+    if resp and resp.headers then
         -- TODO: Expect status code 204
         -- TODO: Expect Cache-Control: no-store
         -- TODO: Expect content size 0
-        return r.headers["replay-nonce"]
+        return resp.headers["replay-nonce"]
     else
         return nil, e
     end
@@ -194,9 +270,9 @@ function ACME.jws(self, t)
         return nil, "ACME.jws: Account key does not exist."
     end
 
-    if not t or not t.resource or not t.url or not t.payload then
+    if not t or not t.url then
         return nil,
-            "ACME.jws: Missing one or more parameters (resource, url, payload)"
+            "ACME.jws: Missing one or more parameters (url)"
     end
 
     -- if key:type() == rsaEncryption
@@ -233,7 +309,7 @@ function ACME.jws(self, t)
     end
 
     jws.protected = http.base64.encode(json.encode(jws.protected), base64enc)
-    jws.payload = http.base64.encode(json.encode(t.payload), base64enc)
+    jws.payload = t.payload and http.base64.encode(json.encode(t.payload), base64enc) or ""
     local digest = openssl.digest.new("SHA256")
     digest:update(jws.protected .. "." .. jws.payload)
     jws.signature = http.base64.encode(self.account.key:sign(digest), base64enc)
@@ -341,7 +417,7 @@ local function new_order(applet)
         }
 
         -- Get auth token
-        local auth, err = http.get{url=acme:proxy_url(auth)}
+        local auth, err = acme:postAsGet{url=auth}
 
         if auth then
             local auth_json = auth:json()
@@ -351,7 +427,7 @@ local function new_order(applet)
                     http_challenges[ch.token] = string.format("%s.%s",
                         ch.token, acme.account.thumbprint)
                     resp, err = acme:post{url=ch.url, data=ch,
-                                          resource="challengeDone", timeout=1}
+                                          resource="challengeDone"}
                     challenge_token = ch.token
                     break
                 end
@@ -363,7 +439,8 @@ local function new_order(applet)
     local order_status
     for _, t in pairs({1, 1, 2, 3, 5, 8, 13}) do
         core.sleep(t)
-        local resp, err = http.get{url=acme:proxy_url(order.headers["location"])}
+        local resp, err = acme:postAsGet{url=order.headers["location"]}
+
         if resp then
             order_status = resp:json()
             if order_status.status == "ready" then
@@ -424,7 +501,7 @@ local function new_order(applet)
             return http.response.create{status_code=500, content="No cert"}:send(applet)
         end
 
-        local resp, err = http.get{url=acme:proxy_url(resp_json.certificate)}
+        local resp, err = acme:postAsGet{url=resp_json.certificate}
         local bundle = string.format("%s%s", resp.content, key:toPEM("private"))
         return http.response.create{status_code=200, content=bundle}:send(applet)
     else
