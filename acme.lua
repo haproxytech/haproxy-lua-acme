@@ -101,7 +101,7 @@ end
 --- Adapt resource URLs when going through HAProxy
 function ACME.proxy_url(self, url)
     if url:sub(1, #self.conf.ca.uri) == self.conf.ca.uri then
-        return string.format("%s%s", self.conf.ca.proxy_uri, url:sub(#self.conf.ca.uri))
+	 return string.format("%s%s", self.conf.ca.proxy_uri, url:sub(#self.conf.ca.uri + 1))
     else
         return url
     end
