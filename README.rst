@@ -1,6 +1,12 @@
 HAProxy ACME v2 client
 ======================
 
+Deprecated
+----------
+
+This project is not maintained anymore. It is recommended to switch to acme.sh instead:
+https://github.com/haproxy/wiki/wiki/Letsencrypt-integration-with-HAProxy-and-acme.sh
+
 Important notice
 ----------------
 Beware, the fixes to support for ACME v2 protocol were recently merged, there
